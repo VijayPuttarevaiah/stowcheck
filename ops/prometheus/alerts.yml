@@ -1,0 +1,22 @@
+groups:
+  - name: stowcheck
+    rules:
+      # A carrier whose plans carry more than 2 errors per 100 containers over 30 minutes
+      # needs a call before its next vessel arrives, not after.
+      - alert: CarrierErrorRateHigh
+        expr: |
+          100 * sum by (carrier) (increase(stowcheck_issues_total{severity="error"}[30m]))
+            / sum by (carrier) (increase(stowcheck_units_checked_total[30m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "BAPLIE error rate above 2 per 100 units for {{ $labels.carrier }}"
+
+      # Files that are not EDIFACT at all usually mean a broken partner integration.
+      - alert: UnreadablePlans
+        expr: increase(stowcheck_plans_total{result="unreadable"}[15m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "StowCheck received a file it could not parse as EDIFACT"

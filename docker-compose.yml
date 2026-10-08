@@ -1,0 +1,51 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: stowcheck
+      POSTGRES_USER: stowcheck
+      POSTGRES_PASSWORD: stowcheck
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stowcheck"]
+      interval: 5s
+      retries: 10
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/stowcheck
+      SPRING_DATASOURCE_USERNAME: stowcheck
+      SPRING_DATASOURCE_PASSWORD: stowcheck
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    ports:
+      - "9092:9090"
+    volumes:
+      - ./ops/prometheus:/etc/prometheus:ro
+    depends_on:
+      - app
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    ports:
+      - "3002:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/stowcheck.json
+    volumes:
+      - ./ops/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./ops/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+
+volumes:
+  pgdata:

@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StowCheck</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2430; --muted: #5d6878; --line: #dfe3e8;
+    --ok: #e9eef4; --ok-text: #2c3848; --err: #c9302c; --err-bg: #fbe5e4; --warn: #a76200; --warn-bg: #fdf0d9;
+    --accent: #1f5fa8;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+  header { padding: 16px 24px; background: #12243a; color: #fff; }
+  header h1 { margin: 0; font-size: 18px; }
+  header p { margin: 2px 0 0; color: #b9c6d6; font-size: 13px; }
+  main { max-width: 1200px; margin: 0 auto; padding: 20px 16px 48px; display: grid; gap: 16px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
+  h2 { margin: 0 0 12px; font-size: 15px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  button { background: var(--accent); color: #fff; border: 0; border-radius: 6px; padding: 8px 14px; cursor: pointer; font: inherit; }
+  button.secondary { background: #e3e8ef; color: var(--text); }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+  tr.clickable { cursor: pointer; }
+  tr.clickable:hover { background: #f0f4f9; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .REJECTED, .ERROR { background: var(--err-bg); color: var(--err); }
+  .ACCEPTED_WITH_WARNINGS, .WARNING { background: var(--warn-bg); color: var(--warn); }
+  .ACCEPTED { background: #e3f3e8; color: #22703d; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 12px; }
+  .stat { background: var(--bg); border-radius: 6px; padding: 8px 10px; }
+  .stat b { display: block; font-size: 20px; }
+  .stat span { color: var(--muted); font-size: 12px; }
+  .bays { display: flex; flex-wrap: wrap; gap: 20px; }
+  .bay h3 { margin: 0 0 6px; font-size: 13px; }
+  .grid { display: grid; gap: 2px; }
+  .cell { width: 34px; height: 24px; border-radius: 3px; font-size: 10px; display: flex; align-items: center; justify-content: center; background: transparent; color: var(--muted); position: relative; }
+  .cell.filled { background: var(--ok); color: var(--ok-text); cursor: default; }
+  .cell.ERROR { background: var(--err); color: #fff; }
+  .cell.WARNING { background: #e3a33a; color: #fff; }
+  .cell.reefer::after { content: "R"; position: absolute; top: 0; right: 2px; font-size: 8px; font-weight: 700; }
+  .cell.dg::before { content: "!"; position: absolute; top: 0; left: 2px; font-size: 8px; font-weight: 700; }
+  .axis { font-size: 10px; color: var(--muted); display: flex; align-items: center; justify-content: center; }
+  .hatch { grid-column: 1 / -1; border-top: 2px solid #8a96a6; margin: 2px 0; }
+  .legend { color: var(--muted); font-size: 12px; margin-top: 10px; }
+  .muted { color: var(--muted); }
+  #detail { min-height: 20px; }
+  @media (max-width: 640px) { th:nth-child(n+5), td:nth-child(n+5) { display: none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>StowCheck</h1>
+  <p>Validates BAPLIE stowage plans (SMDG 2.2.1, UN/EDIFACT D.95B) before they reach the terminal operating system.</p>
+</header>
+<main>
+  <section>
+    <h2>Submit a stowage plan</h2>
+    <div class="row">
+      <input type="file" id="file" accept=".edi,.txt,.baplie">
+      <button id="upload">Validate</button>
+      <span id="uploadMsg" class="muted"></span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Recent plans</h2>
+    <table>
+      <thead><tr><th>#</th><th>Received</th><th>Vessel / voyage</th><th>Status</th><th>Carrier</th><th>Units</th><th>Errors</th><th>Warnings</th></tr></thead>
+      <tbody id="runs"><tr><td colspan="8" class="muted">No plans yet.</td></tr></tbody>
+    </table>
+    <div class="row" style="margin-top:10px">
+      <span class="muted">Compare plan</span>
+      <select id="from"></select><span class="muted">with</span><select id="to"></select>
+      <button class="secondary" id="compare">Show changes</button>
+    </div>
+    <div id="diff"></div>
+  </section>
+
+  <section id="report" hidden>
+    <h2 id="reportTitle"></h2>
+    <div class="stats" id="stats"></div>
+    <h2>Bay plan</h2>
+    <div class="bays" id="bays"></div>
+    <div class="legend">Viewed from astern. Tiers 80 and up are on deck, below the line is the hold.
+      Red = error, amber = warning. R = reefer, ! = dangerous goods. Hover a cell for details.</div>
+    <div id="detail"></div>
+    <h2 style="margin-top:16px">Findings</h2>
+    <table>
+      <thead><tr><th>Severity</th><th>Rule</th><th>Cell</th><th>Container</th><th>Segment</th><th>Message</th></tr></thead>
+      <tbody id="issues"></tbody>
+    </table>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+async function api(path, options) {
+  const res = await fetch(path, options);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || res.statusText);
+  return body;
+}
+
+async function loadRuns() {
+  const runs = await api("/api/plans");
+  if (!runs.length) return;
+  $("runs").innerHTML = runs.map(r => `
+    <tr class="clickable" data-id="${r.id}">
+      <td>${r.id}</td><td>${new Date(r.receivedAt).toLocaleString()}</td>
+      <td>${esc(r.vesselName)} <span class="muted">${esc(r.voyage)}</span></td>
+      <td><span class="pill ${r.status}">${r.status.replaceAll("_", " ").toLowerCase()}</span></td>
+      <td>${esc(r.carrier)}</td><td>${r.units}</td><td>${r.errors}</td><td>${r.warnings}</td>
+    </tr>`).join("");
+  document.querySelectorAll("#runs tr.clickable").forEach(tr => tr.onclick = () => showRun(tr.dataset.id));
+  const options = runs.map(r => `<option value="${r.id}">#${r.id} ${esc(r.vesselName)} ${esc(r.voyage)}</option>`).join("");
+  $("from").innerHTML = options; $("to").innerHTML = options;
+  if (runs.length > 1) $("from").selectedIndex = 1;
+}
+
+async function showRun(id) {
+  history.replaceState(null, "", `#run=${id}`);
+  const [report, cells] = await Promise.all([api(`/api/plans/${id}`), api(`/api/plans/${id}/cells`)]);
+  const s = report.summary;
+  $("report").hidden = false;
+  $("reportTitle").innerHTML = `Plan #${s.id}: ${esc(s.vesselName)} ${esc(s.voyage)} <span class="pill ${s.status}">${s.status.replaceAll("_", " ").toLowerCase()}</span>`;
+  $("stats").innerHTML = [["Units", s.units], ["Errors", s.errors], ["Warnings", s.warnings], ["Carrier", esc(s.carrier)]]
+    .map(([k, v]) => `<div class="stat"><b>${v}</b><span>${k}</span></div>`).join("");
+  $("issues").innerHTML = report.issues.length ? report.issues.map(i => `
+    <tr><td><span class="pill ${i.severity}">${i.severity.toLowerCase()}</span></td><td>${i.rule}</td>
+    <td>${esc(i.cell ?? "header")}</td><td>${esc(i.containerId)}</td><td>${i.position || ""}</td><td>${esc(i.message)}</td></tr>`).join("")
+    : `<tr><td colspan="6" class="muted">No findings. The plan is clean.</td></tr>`;
+  drawBays(cells);
+}
+
+function rowOrder(rows) {
+  // Viewed from astern: even rows (port) descending on the left, 00 in the middle, odd rows (starboard) ascending on the right
+  const even = rows.filter(r => r % 2 === 0 && r !== 0).sort((a, b) => b - a);
+  const odd = rows.filter(r => r % 2 === 1).sort((a, b) => a - b);
+  return [...even, ...(rows.includes(0) ? [0] : []), ...odd];
+}
+
+function drawBays(cells) {
+  const iso = cells.filter(c => c.bay >= 0);
+  const byBay = new Map();
+  iso.forEach(c => { if (!byBay.has(c.bay)) byBay.set(c.bay, []); byBay.get(c.bay).push(c); });
+
+  $("bays").innerHTML = [...byBay.keys()].sort((a, b) => a - b).map(bay => {
+    const units = byBay.get(bay);
+    const rows = rowOrder([...new Set(units.map(u => u.row))]);
+    const deck = [...new Set(units.filter(u => u.tier >= 80).map(u => u.tier))].sort((a, b) => b - a);
+    const hold = [...new Set(units.filter(u => u.tier < 80).map(u => u.tier))].sort((a, b) => b - a);
+    const at = new Map();
+    units.forEach(u => { const k = `${u.row}-${u.tier}`; at.set(k, [...(at.get(k) || []), u]); });
+
+    const line = (tier) => `<div class="axis">${String(tier).padStart(2, "0")}</div>` + rows.map(row => {
+      const here = at.get(`${row}-${tier}`) || [];
+      if (!here.length) return `<div class="cell"></div>`;
+      const worst = here.some(u => u.worst === "ERROR") ? "ERROR" : here.some(u => u.worst === "WARNING") ? "WARNING" : "";
+      const u = here[0];
+      const tip = here.map(x => `${x.containerId ?? "?"} ${x.isoSizeType ?? ""} ${x.weightKg ?? "?"} kg to ${x.portOfDischarge ?? "?"}` +
+        (x.messages.length ? "\n- " + x.messages.join("\n- ") : "")).join("\n\n");
+      return `<div class="cell filled ${worst} ${u.reefer ? "reefer" : ""} ${u.dangerous ? "dg" : ""}" title="${esc(tip)}">${esc(u.portOfDischarge?.slice(2) ?? "")}</div>`;
+    }).join("");
+
+    const cols = `grid-template-columns: 24px repeat(${rows.length}, 34px)`;
+    const header = `<div></div>` + rows.map(r => `<div class="axis">${String(r).padStart(2, "0")}</div>`).join("");
+    const body = deck.map(line).join("") + (deck.length && hold.length ? `<div class="hatch"></div>` : "") + hold.map(line).join("");
+    return `<div class="bay"><h3>Bay ${String(bay).padStart(3, "0")}</h3><div class="grid" style="${cols}">${header}${body}</div></div>`;
+  }).join("") || `<p class="muted">No cells in ISO bay-row-tier format.</p>`;
+}
+
+$("upload").onclick = async () => {
+  const file = $("file").files[0];
+  if (!file) { $("uploadMsg").textContent = "Pick a .edi file first."; return; }
+  const form = new FormData(); form.append("file", file);
+  try {
+    const report = await api("/api/plans", { method: "POST", body: form });
+    $("uploadMsg").textContent = `Plan #${report.summary.id}: ${report.summary.errors} errors, ${report.summary.warnings} warnings`;
+    await loadRuns(); await showRun(report.summary.id);
+  } catch (e) { $("uploadMsg").textContent = "Could not read file: " + e.message; }
+};
+
+$("compare").onclick = async () => {
+  const diff = await api(`/api/plans/${$("from").value}/diff/${$("to").value}`);
+  $("diff").innerHTML = diff.changes.length ? `<table style="margin-top:10px"><thead><tr><th>Change</th><th>Container</th><th>Before</th><th>After</th></tr></thead><tbody>` +
+    diff.changes.map(c => `<tr><td>${c.kind.replaceAll("_", " ").toLowerCase()}</td><td>${esc(c.containerId)}</td><td>${esc(c.before ?? "")}</td><td>${esc(c.after ?? "")}</td></tr>`).join("") +
+    `</tbody></table>` : `<p class="muted">No differences.</p>`;
+};
+
+loadRuns().then(() => {
+  const linked = location.hash.match(/run=(\d+)/);
+  if (linked) showRun(linked[1]);
+});
+</script>
+</body>
+</html>
