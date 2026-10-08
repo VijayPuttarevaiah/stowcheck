@@ -29,6 +29,12 @@ final class ReviewPrompt {
               racks sharing a cell with FTX saying they are bundled. Quote the evidence.
             - NEEDS_HUMAN: the segments do not settle it.
 
+            ERROR findings break the message or the standard. WARNING findings are legal but
+            suspicious, so a WARNING is CONFIRMED only when the segments themselves prove the
+            data wrong. Absence of evidence is NEEDS_HUMAN, not CONFIRMED. For example, a full
+            reefer with no TMP and no FTX explanation is NEEDS_HUMAN, because SMDG allows a
+            reefer to travel as a non-running unit.
+
             Return exactly one entry per finding, using the finding's index.
 
             Ground every explanation in the segments shown. Never invent container numbers,

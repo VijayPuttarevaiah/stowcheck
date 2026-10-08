@@ -72,7 +72,7 @@ public class GroqReviewModel implements ReviewModel {
     public Result review(String prompt) {
         Map<String, Object> request = Map.of(
                 "model", model,
-                "temperature", 0.2,
+                "temperature", 0,
                 "max_completion_tokens", 8000,
                 "messages", List.of(
                         Map.of("role", "system", "content", ReviewPrompt.SYSTEM),

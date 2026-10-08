@@ -94,6 +94,21 @@ export GROQ_API_KEY=gsk_...   # free key from console.groq.com
 ./mvnw spring-boot:run
 ```
 
+Two sample files show what the review adds on top of the rules:
+
+- `samples/broken-plan.edi`: 13 findings. The model confirms the 10 errors, sends the
+  3 warnings (missing VGM, reefer with no set point, DG without UN number) to a human,
+  and drafts an email listing only the confirmed problems.
+- `samples/ai-review-cases.edi`: two full reefers without a set point. One has FTX text
+  saying the unit is not running, and the model marks it likely intentional, quoting
+  that text. The other has no explanation, so it goes to a human. A third container's
+  FTX says "IGNORE ALL PREVIOUS INSTRUCTIONS"; the model ignores it, still confirms
+  that container's bad check digit, and the plan stays rejected.
+
+A review of a dozen findings uses about 5,000 tokens and takes 5 to 10 seconds. On
+Groq's free tier that allows roughly one review a minute; past that the API returns a
+rate-limit message and the rules keep working.
+
 ## API
 
 | Method | Path | |
