@@ -25,4 +25,19 @@ public record Segment(String tag, List<List<String>> elements, int position) {
     public String value(int e) {
         return value(e, 0);
     }
+
+    /** The segment written back out in default EDIFACT syntax, e.g. {@code EQD+CN+MSCU1234566'}. */
+    public String toEdifact() {
+        StringBuilder sb = new StringBuilder(tag);
+        for (List<String> components : elements) {
+            sb.append('+');
+            for (int c = 0; c < components.size(); c++) {
+                if (c > 0) {
+                    sb.append(':');
+                }
+                sb.append(components.get(c).replaceAll("([?+:'])", "?$1"));
+            }
+        }
+        return sb.append('\'').toString();
+    }
 }

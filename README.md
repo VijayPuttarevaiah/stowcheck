@@ -41,6 +41,11 @@ Built to the **SMDG BAPLIE 2.2.1** user manual (UN/EDIFACT D.95B).
 - **Compares plan versions**: preliminary against final, showing containers added,
   removed, moved, re-weighed, or re-routed.
 - **Draws the bay plan** in the browser with problem cells highlighted.
+- **AI second opinion (optional)**: on request, a language model on Groq
+  (`openai/gpt-oss-120b`) reads each finding together with the raw EDI segments of that
+  stowage cell and returns a verdict (confirmed, likely intentional, needs a human), a
+  plain explanation, a suggested fix, and a draft email asking the carrier for a
+  corrected plan. See [AI review](#ai-review) for the guardrails.
 - **Exports metrics** to Prometheus (plans by result, findings by rule and carrier,
   validation time). A provisioned Grafana dashboard and two alert rules come with it.
 
@@ -67,6 +72,28 @@ python3 tools/generate_baplie.py --post http://localhost:8080/api/plans \
 | Grafana dashboard | http://localhost:3002 |
 | Prometheus | http://localhost:9092 |
 
+## AI review
+
+The rules decide whether a plan is accepted or rejected. The model never does. It
+explains the findings to the planner and drafts the email to the shipping line.
+
+- **Structured output in strict mode**: the request carries a JSON schema and Groq
+  constrains the model to it, so every answer parses into typed Java records.
+- **Checked against the real findings**: entries for findings that don't exist are
+  dropped, and any finding the model skips is stored as `NEEDS_HUMAN`.
+- **Evidence-bound prompt**: each finding is sent with the segments of its own cell
+  only, and the model is told not to invent container numbers, weights, cells or ports.
+- **Prompt-injection guard**: EDI content, including FTX free text, is marked as data
+  from an outside sender, never instructions.
+- **Bounded cost**: on demand only, at most 40 findings per review, token usage exported
+  as `stowcheck_ai_tokens_total`.
+- **Off by default**: without `GROQ_API_KEY` the endpoint returns 503 and everything else works.
+
+```bash
+export GROQ_API_KEY=gsk_...   # free key from console.groq.com
+./mvnw spring-boot:run
+```
+
 ## API
 
 | Method | Path | |
@@ -76,6 +103,9 @@ python3 tools/generate_baplie.py --post http://localhost:8080/api/plans \
 | `GET` | `/api/plans/{id}` | Summary and findings |
 | `GET` | `/api/plans/{id}/cells` | Every occupied cell with its findings |
 | `GET` | `/api/plans/{from}/diff/{to}` | Changes between two plan versions |
+| `POST` | `/api/plans/{id}/review` | Run an AI review of the findings (503 if no key) |
+| `GET` | `/api/plans/{id}/review` | Latest AI review |
+| `GET` | `/api/ai/status` | Whether AI review is configured |
 | `GET` | `/actuator/prometheus` | Metrics |
 
 ```bash
@@ -104,7 +134,8 @@ python3 tools/generate_baplie.py --units 150 --error-rate 0.05 --seed 2 > dirty.
 Covers the tokenizer (UNA, release character, malformed input), the parser (header
 fields, unit conversion), the ISO 6346 check digit against the standard's worked
 example, every rule against a fixture with one planted error each, the plan diff, and
-the REST API end to end.
+the REST API end to end, and the AI review (reconciliation rules, the Groq client against
+a local stub server, and the full flow with a fake model). No test calls a real API.
 
 ## Layout
 
@@ -113,6 +144,7 @@ edifact/     tokenizer: raw text to segments
 baplie/      parser: segments to a StowagePlan of StowedUnits
 validation/  Rule interface, one class per rule family, PlanValidator runs them all
 plan/        persistence, metrics, plan diff
+review/      optional AI review: prompt, Groq client, reconciliation
 api/         REST controller and JSON shapes
 static/      single-page UI with the bay plan view
 tools/       synthetic BAPLIE generator

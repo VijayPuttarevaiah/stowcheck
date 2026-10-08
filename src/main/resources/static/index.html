@@ -29,7 +29,10 @@
   .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
   .REJECTED, .ERROR { background: var(--err-bg); color: var(--err); }
   .ACCEPTED_WITH_WARNINGS, .WARNING { background: var(--warn-bg); color: var(--warn); }
-  .ACCEPTED { background: #e3f3e8; color: #22703d; }
+  .ACCEPTED, .LIKELY_INTENTIONAL { background: #e3f3e8; color: #22703d; }
+  .CONFIRMED { background: var(--err-bg); color: var(--err); }
+  .NEEDS_HUMAN { background: var(--warn-bg); color: var(--warn); }
+  textarea { width: 100%; min-height: 140px; font: 13px/1.45 ui-monospace, Menlo, monospace; border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
   .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 12px; }
   .stat { background: var(--bg); border-radius: 6px; padding: 8px 10px; }
   .stat b { display: block; font-size: 20px; }
@@ -93,6 +96,11 @@
       <thead><tr><th>Severity</th><th>Rule</th><th>Cell</th><th>Container</th><th>Segment</th><th>Message</th></tr></thead>
       <tbody id="issues"></tbody>
     </table>
+    <h2 style="margin-top:16px">AI review</h2>
+    <p class="muted" style="margin-top:-6px">A language model reads each finding with its raw EDI segments and gives a second opinion.
+      Advisory only: the rules decide the plan's status.</p>
+    <div class="row"><button id="runReview">Review findings with AI</button><span id="reviewMsg" class="muted"></span></div>
+    <div id="review"></div>
   </section>
 </main>
 <script>
@@ -135,7 +143,43 @@ async function showRun(id) {
     <td>${esc(i.cell ?? "header")}</td><td>${esc(i.containerId)}</td><td>${i.position || ""}</td><td>${esc(i.message)}</td></tr>`).join("")
     : `<tr><td colspan="6" class="muted">No findings. The plan is clean.</td></tr>`;
   drawBays(cells);
+  await aiStatus;
+  currentRun = id;
+  $("review").innerHTML = "";
+  $("reviewMsg").textContent = aiEnabled ? "" : "AI review is off (no GROQ_API_KEY configured).";
+  $("runReview").disabled = !aiEnabled || report.issues.length === 0;
+  fetch(`/api/plans/${id}/review`).then(r => r.ok ? r.json() : null).then(r => r && showReview(r));
 }
+
+let currentRun = null, aiEnabled = false;
+const aiStatus = fetch("/api/ai/status").then(r => r.json()).then(s => { aiEnabled = s.enabled; }).catch(() => {});
+
+function showReview(r) {
+  const label = v => v.replaceAll("_", " ").toLowerCase();
+  $("review").innerHTML = `
+    <p class="muted">${esc(r.model)} &middot; ${new Date(r.createdAt).toLocaleString()} &middot; ${r.inputTokens + r.outputTokens} tokens
+      ${r.notReviewed ? `&middot; ${r.notReviewed} findings over the limit were not sent` : ""}</p>
+    <table><thead><tr><th>Verdict</th><th>Rule</th><th>Cell</th><th>Container</th><th>Explanation</th><th>Suggested fix</th></tr></thead><tbody>
+    ${r.findings.map(f => `<tr><td><span class="pill ${f.verdict}">${label(f.verdict)}</span></td><td>${f.rule}</td>
+      <td>${esc(f.cell ?? "header")}</td><td>${esc(f.containerId)}</td><td>${esc(f.explanation)}</td><td>${esc(f.suggestedFix)}</td></tr>`).join("")}
+    </tbody></table>
+    ${r.carrierMessage ? `<h2 style="margin-top:16px">Draft message to the carrier</h2>
+      <textarea id="carrierMsg" readonly>${esc(r.carrierMessage)}</textarea>
+      <div class="row" style="margin-top:6px"><button class="secondary" id="copyMsg">Copy</button></div>` : ""}`;
+  const copy = $("copyMsg");
+  if (copy) copy.onclick = () => navigator.clipboard.writeText(r.carrierMessage).then(() => copy.textContent = "Copied");
+}
+
+$("runReview").onclick = async () => {
+  $("runReview").disabled = true;
+  $("reviewMsg").textContent = "Reviewing...";
+  try {
+    const r = await api(`/api/plans/${currentRun}/review`, { method: "POST" });
+    $("reviewMsg").textContent = "";
+    showReview(r);
+  } catch (e) { $("reviewMsg").textContent = e.message; }
+  $("runReview").disabled = false;
+};
 
 function rowOrder(rows) {
   // Viewed from astern: even rows (port) descending on the left, 00 in the middle, odd rows (starboard) ascending on the right

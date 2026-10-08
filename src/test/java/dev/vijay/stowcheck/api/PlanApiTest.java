@@ -82,6 +82,17 @@ class PlanApiTest {
     }
 
     @Test
+    void aiReviewIsOffWithoutAnApiKey() throws Exception {
+        long run = submit("broken-plan.edi");
+
+        mvc.perform(get("/api/ai/status"))
+                .andExpect(jsonPath("$.enabled").value(false));
+        mvc.perform(post("/api/plans/{id}/review", run))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("GROQ_API_KEY")));
+    }
+
+    @Test
     void exposesPrometheusMetrics() throws Exception {
         submit("broken-plan.edi");
 
